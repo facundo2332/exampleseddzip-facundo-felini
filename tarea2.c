@@ -1,7 +1,6 @@
 #include "tdas/extra.h"
 #include "tdas/list.h"
 #include "tdas/map.h"
-#include "tdas/multimap.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,9 +62,14 @@ void mostrar_pelicula(Film *peli) {
   printf("\n\n");
 }
 
-void cargar_peliculas(Map *pelis_byid, MultiMap *pelis_bygenres,
-                      MultiMap *pelis_bydirector,
-                      MultiMap *pelis_bydecade) {
+void cargar_peliculas(Map *pelis_byid, Map *pelis_bygenres,
+                      Map *pelis_bydirector, Map *pelis_bydecade) {
+
+  // Evita duplicar las películas si se elige la opción 1 más de una vez
+  if (map_first(pelis_byid) != NULL) {
+    printf("Las películas ya fueron cargadas.\n");
+    return;
+  }
 
   FILE *archivo = fopen("data/Top1500.csv", "r");
 
@@ -91,27 +95,23 @@ void cargar_peliculas(Map *pelis_byid, MultiMap *pelis_bygenres,
 
     peli->genres = split_string(campos[11], ",");
     peli->year = atoi(campos[10]);
-
-    /*
-       CAMBIAR ESTE ÍNDICE POR EL CAMPO DE RATING
-       DE TU ARCHIVO Top1500.csv
-    */
-    peli->rating = atof(campos[8]);
+    peli->rating = atof(campos[8]); // campo "IMDb Rating" de Top1500.csv
 
     map_insert(pelis_byid, peli->id, peli);
 
+    // Mapa por género: cada género apunta a una lista de películas
     char *genero = list_first(peli->genres);
 
     while (genero != NULL) {
 
-      MapPair *par = multimap_search(pelis_bygenres, genero);
+      MapPair *par = map_search(pelis_bygenres, genero);
 
       if (par == NULL) {
         List *lista = list_create();
 
         if (lista != NULL) {
           list_pushBack(lista, peli);
-          multimap_insert(pelis_bygenres, genero, lista);
+          map_insert(pelis_bygenres, genero, lista);
         }
       } else {
         List *lista = par->value;
@@ -121,31 +121,40 @@ void cargar_peliculas(Map *pelis_byid, MultiMap *pelis_bygenres,
       genero = list_next(peli->genres);
     }
 
-    MapPair *parDirector =
-        multimap_search(pelis_bydirector, peli->director);
+    // Mapa por director: una película puede tener varios directores
+    // (ej. "Joel Coen, Ethan Coen"), así que se registra con cada uno
+    List *directores = split_string(campos[14], ",");
+    char *director = list_first(directores);
 
-    if (parDirector == NULL) {
+    while (director != NULL) {
 
-      List *lista = list_create();
+      MapPair *parDirector = map_search(pelis_bydirector, director);
 
-      if (lista != NULL) {
+      if (parDirector == NULL) {
+
+        List *lista = list_create();
+
+        if (lista != NULL) {
+          list_pushBack(lista, peli);
+          map_insert(pelis_bydirector, director, lista);
+        }
+
+      } else {
+
+        List *lista = parDirector->value;
         list_pushBack(lista, peli);
-        multimap_insert(pelis_bydirector, peli->director, lista);
       }
 
-    } else {
-
-      List *lista = parDirector->value;
-      list_pushBack(lista, peli);
+      director = list_next(directores);
     }
 
+    // Mapa por década
     int decada = (peli->year / 10) * 10;
     char claveDecada[20];
 
     sprintf(claveDecada, "%d", decada);
 
-    MapPair *parDecada =
-        multimap_search(pelis_bydecade, claveDecada);
+    MapPair *parDecada = map_search(pelis_bydecade, claveDecada);
 
     if (parDecada == NULL) {
 
@@ -159,7 +168,7 @@ void cargar_peliculas(Map *pelis_byid, MultiMap *pelis_bygenres,
 
         if (clave != NULL) {
           strcpy(clave, claveDecada);
-          multimap_insert(pelis_bydecade, clave, lista);
+          map_insert(pelis_bydecade, clave, lista);
         }
       }
 
@@ -193,14 +202,14 @@ void buscar_por_id(Map *pelis_byid) {
   }
 }
 
-void buscar_por_director(MultiMap *pelis_bydirector) {
+void buscar_por_director(Map *pelis_bydirector) {
 
   char director[300];
 
   printf("Ingrese el director: ");
   scanf(" %299[^\n]", director);
 
-  MapPair *par = multimap_search(pelis_bydirector, director);
+  MapPair *par = map_search(pelis_bydirector, director);
 
   if (par == NULL) {
     printf("No se encontraron películas de ese director.\n");
@@ -216,14 +225,14 @@ void buscar_por_director(MultiMap *pelis_bydirector) {
   }
 }
 
-void buscar_por_genero(MultiMap *pelis_bygenres) {
+void buscar_por_genero(Map *pelis_bygenres) {
 
   char genero[100];
 
   printf("Ingrese el género: ");
   scanf("%99s", genero);
 
-  MapPair *par = multimap_search(pelis_bygenres, genero);
+  MapPair *par = map_search(pelis_bygenres, genero);
 
   if (par == NULL) {
     printf("No se encontraron películas de ese género.\n");
@@ -239,7 +248,7 @@ void buscar_por_genero(MultiMap *pelis_bygenres) {
   }
 }
 
-void buscar_por_decada(MultiMap *pelis_bydecade) {
+void buscar_por_decada(Map *pelis_bydecade) {
 
   int decada;
 
@@ -251,7 +260,7 @@ void buscar_por_decada(MultiMap *pelis_bydecade) {
   char clave[20];
   sprintf(clave, "%d", decada);
 
-  MapPair *par = multimap_search(pelis_bydecade, clave);
+  MapPair *par = map_search(pelis_bydecade, clave);
 
   if (par == NULL) {
     printf("No se encontraron películas de esa década.\n");
@@ -308,7 +317,7 @@ int pelicula_tiene_genero(Film *peli, char *generoBuscado) {
   return 0;
 }
 
-void buscar_por_decada_genero(MultiMap *pelis_bydecade) {
+void buscar_por_decada_genero(Map *pelis_bydecade) {
 
   int decada;
   char genero[100];
@@ -324,7 +333,7 @@ void buscar_por_decada_genero(MultiMap *pelis_bydecade) {
   char clave[20];
   sprintf(clave, "%d", decada);
 
-  MapPair *par = multimap_search(pelis_bydecade, clave);
+  MapPair *par = map_search(pelis_bydecade, clave);
 
   if (par == NULL) {
     printf("No se encontraron películas de esa década.\n");
@@ -348,16 +357,11 @@ int main() {
 
   char opcion;
 
+  // Un mapa por criterio de búsqueda (TDA Mapa de tdas/map.h)
   Map *pelis_byid = map_create(is_equal_str);
-
-  MultiMap *pelis_bygenres =
-      multimap_create(is_equal_str);
-
-  MultiMap *pelis_bydirector =
-      multimap_create(is_equal_str);
-
-  MultiMap *pelis_bydecade =
-      multimap_create(is_equal_str);
+  Map *pelis_bygenres = map_create(is_equal_str);
+  Map *pelis_bydirector = map_create(is_equal_str);
+  Map *pelis_bydecade = map_create(is_equal_str);
 
   do {
 
